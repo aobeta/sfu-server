@@ -1,0 +1,7 @@
+{
+  "sslKey": "./localhost.pem",
+  "sslCert": "./localhost.pem",
+  "useSsl": true,
+  "listenIp": "localhost",
+  "listenPort": "8888"
+}

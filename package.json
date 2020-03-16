@@ -1,0 +1,17 @@
+{
+  "name": "sfu-server",
+  "version": "1.0.0",
+  "description": "An SFU server with built in signaling for webrtc clients",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Anthony Obeta",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.17.1",
+    "mediasoup": "^3.5.5",
+    "mediasoup-client": "^3.5.4",
+    "socket.io": "^2.3.0"
+  }
+}
