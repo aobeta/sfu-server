@@ -5,7 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="mobile-web-app-capable" content="yes" />
     <link rel="icon" type="image/png" href="mediasoup.png" />
-    <title>Mediasoup Sample App</title>
+    <title>SFU server</title>
+
+    <script>
+      function makeId(length) {
+        var result = '';
+        var characters =
+          'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        var charactersLength = characters.length;
+        for (var i = 0; i < length; i++) {
+          result += characters.charAt(
+            Math.floor(Math.random() * charactersLength),
+          );
+        }
+        return result;
+      }
+
+      const newId = makeId(15);
+
+      if (window.location.pathname == '/') {
+        // if browser comes in with no roomId set then just generate a new one.
+        window.history.replaceState({ roomId: newId }, '', newId.toString());
+        window.__RoomId__ = newId;
+      }
+
+      if (window.location.pathname.length > 1) {
+        window.__RoomId__ = location.pathname.substring(1);
+      }
+    </script>
   </head>
   <style>
     body {
