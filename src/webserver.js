@@ -5,6 +5,7 @@ const config = require('../config');
 
 async function startWebServer(expressApp) {
   const { sslKey, sslCert, useSsl } = config;
+  let webServer;
   if (useSsl) {
     if (!fs.existsSync(sslKey) || !fs.existsSync(sslCert)) {
       console.error('SSL files are not found. check your config.js file');
@@ -31,7 +32,7 @@ async function startWebServer(expressApp) {
 
     webServer.listen(listenPort, () => {
       console.log('server is running at path %s', path);
-      resolve(path);
+      resolve({ path, webServer });
     });
   });
 }

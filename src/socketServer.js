@@ -1,17 +1,21 @@
-const sockets = [];
+const socketIO = require('socket.io');
 
-async function startSocketServer() {
-  socketServer = new socketIOServer(webServer, {
+const _rooms = [];
+
+function startSocketServer(webServer) {
+  socketServer = new socketIO(webServer, {
     log: true,
-    serveClient: true,
-    path: '/socket',
+    serveClient: false,
   });
 
-  socketIOServer.on('connection');
+  socketServer.on('connection', handleClientConnect);
 }
 
 function handleClientConnect(socket) {
+  console.log('new client connected: ', socket.id);
   socket.on('joinRoom', room => {
     socket.join(room);
   });
 }
+
+module.exports = startSocketServer;

@@ -1,12 +1,12 @@
 const express = require('express');
 const path = require('path');
 
-function startExpressApp() {
+function startExpressApp({ webRoot }) {
   const expressApp = express();
   expressApp.use(express.json()); // may not need this. but just in case
-  expressApp.use(express.static(path.join(__dirname, 'dist')));
+  expressApp.use(express.static(webRoot));
 
-  expressApp.get('/test', (req, res) => res.send('hello from sfu-server'));
+  // expressApp.get('/test', (req, res) => res.send('hello from sfu-server'));
 
   // add request error handling to the end of the pipeline in case there is some error
   expressApp.use((error, req, res, next) => {
