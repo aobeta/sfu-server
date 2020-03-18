@@ -3,5 +3,14 @@
   "sslCert": "./localhost.pem",
   "useSsl": true,
   "listenIp": "localhost",
-  "listenPort": "8888"
+  "listenPort": "8888",
+  "webRtcTransport": {
+    "listenIps": [
+      {
+        "ip": "127.0.0.1",
+        "announcedIp": null
+      }
+    ],
+    "initialAvailableOutgoingBitrate": 1000000
+  }
 }

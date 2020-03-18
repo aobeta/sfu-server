@@ -1,4 +1,5 @@
 const mediasoup = require('mediasoup');
+const config = require('../config');
 
 let _worker;
 let _routers = new Map();
@@ -26,6 +27,17 @@ async function createNewRouter() {
   return router;
 }
 
+async function createNewTransport(router) {
+  return router.createWebRtcTransport({ ...config.webRtcTransport });
+}
+
+async function createNewTransports(router) {
+  return [
+    router.createWebRtcTransport({ ...config.webRtcTransport }),
+    router.createWebRtcTransport({ ...config.webRtcTransport }),
+  ];
+}
+
 function getRouter(routerId) {
   return _routers.get(routerId);
 }
@@ -42,4 +54,6 @@ module.exports = {
   createWorker,
   getWorker,
   createNewRouter,
+  createNewTransport,
+  createNewTransports,
 };
