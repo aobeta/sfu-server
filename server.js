@@ -1,16 +1,17 @@
 const mediasoup = require('mediasoup');
-
-const socketIOServer = require('socket.io');
+const path = require('path');
 
 const { startWebServer } = require('./src/webserver');
 const { startExpressApp } = require('./src/express');
+const startSocketServer = require('./src/socketServer');
 const { exec } = require('child_process');
 
 (async function() {
   try {
-    let app = startExpressApp();
-    const path = await startWebServer(app);
-    exec(`open ${path}/`);
+    let app = startExpressApp({ webRoot: path.join(__dirname, '/dist') });
+    const { path: serverPath, webServer } = await startWebServer(app);
+    startSocketServer(webServer);
+    exec(`open ${serverPath}/`);
   } catch (e) {
     console.log(e);
   }
