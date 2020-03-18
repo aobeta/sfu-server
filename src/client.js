@@ -11,5 +11,10 @@ _connectBtn.addEventListener('click', connect);
 function connect() {
   _socket = socket({ autoConnect: true });
 
-  _socket.on('connect', () => console.log('connected to SOCKET.IO server'));
+  _socket.on('connect', () => {
+    console.log('connected to SOCKET.IO server');
+    _socket.emit('joinRoom', window.__RoomId__, data => {
+      console.log('joinRoom response: ', data);
+    });
+  });
 }
