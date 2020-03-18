@@ -1,5 +1,5 @@
 const socketIO = require('socket.io');
-const { createNewRouter } = require('./SfuWorker');
+const { createNewRouter, createNewTransports } = require('./SfuWorker');
 
 let _socketServer;
 const _rooms = new Map();
@@ -53,17 +53,35 @@ class Room {
   constructor({ router, roomId, initialParticipantId }) {
     this.id = roomId;
     this.router = router;
-    this.participants = [
-      new Participant({ participantId: initialParticipantId }),
-    ];
+    this.participants = [];
+
+    // if optional initial participant is specified then add them to the room.
+    if (initialParticipantId) {
+      this.addNewParticipant(initialParticipantId);
+    }
+  }
+
+  addNewParticipant(participantId) {
+    // create the transports that the participant will need
+    const { sendTransport, recvTransport } = createNewTransports();
+    // create participant object
+    const participant = new Participant({
+      participantId,
+      sendTransport,
+      recvTransport,
+    });
+    // add to list of participants.
+    this.participants.push(participant);
   }
 }
 
 class Participant {
-  constructor({ participantId }) {
+  constructor({ participantId, sendTransport, recvTransport }) {
     this.id = participantId;
-    this.transports = [];
-    this.producers = [];
+    this.sendTransport = sendTransport;
+    this.recvTransport = recvTransport;
+    this.audioProducer;
+    this.videoProducer;
     this.consumers = [];
   }
 }
