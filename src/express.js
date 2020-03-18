@@ -6,7 +6,11 @@ function startExpressApp({ webRoot }) {
   expressApp.use(express.json()); // may not need this. but just in case
   expressApp.use(express.static(webRoot));
 
-  // expressApp.get('/test', (req, res) => res.send('hello from sfu-server'));
+  expressApp.get('*', (req, res) => {
+    // this is an SPA so just return the index html file for any paths that are not handled by
+    // express.static middleware.
+    res.sendFile(path.join(webRoot, 'index.html'));
+  });
 
   // add request error handling to the end of the pipeline in case there is some error
   expressApp.use((error, req, res, next) => {
