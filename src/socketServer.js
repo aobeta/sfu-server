@@ -17,21 +17,26 @@ function handleClientConnect(socket) {
   console.log('new client connected: ', socket.id);
 
   socket.on('joinRoom', async (roomId, callback) => {
-    console.log('user wants to connect with specific room --> ', roomId);
+    console.log('user wants to connect with specific room --> ', roomId, _rooms.size);
     // join room so that we can communicate with other people in the room.
     try {
       await new Promise(r => socket.join(roomId, r));
       await createOrJoinRoom(roomId, socket.id);
       callback({ success: true });
     } catch (e) {
-      callback({ success: false, error: e.message });
+      callback({
+        success: false,
+        error: e.message,
+      });
     }
   });
 
   socket.on('getRouterRtpCapabilites', (roomId, callback) => {
     const room = _rooms.get(roomId);
     if (!room) {
-      callback({ error: 'no room with that Id was found' });
+      callback({
+        error: 'no room with that Id was found',
+      });
       return;
     } else {
       callback(room.router.rtpCapabilities);
@@ -61,7 +66,25 @@ function handleClientConnect(socket) {
     });
   });
 
-  //other listeners
+  socket.on('disconnect', reason => {
+    console.info(`client with id ${socket.id} has disconnected. reason: ${reason}`);
+    const room = Array.from(_rooms.values()).find(room => room.participants.has(socket.id));
+    if (room) {
+      // first cleanup the participant
+      const participant = room.participants.get(socket.id);
+      participant.cleanupResources();
+      room.participants.delete(participant.id);
+
+      // then cleanup the room if necessary.
+      if (room.participants.size === 0) {
+        room.cleanupResources();
+        _rooms.delete(room.id);
+        console.info('rooms left :: ', _rooms.size);
+      }
+    } else {
+      console.error(`no room was found for participant with Id: ${socket.id}`);
+    }
+  });
 }
 
 async function createOrJoinRoom(roomId, participantId) {
@@ -94,9 +117,7 @@ class Room {
 
   async addNewParticipant(participantId) {
     // create the transports that the participant will need
-    const [sendTransport, recvTransport] = await createNewTransports(
-      this.router,
-    );
+    const [sendTransport, recvTransport] = await createNewTransports(this.router);
     // create participant object
     const participant = new Participant({
       participantId,
@@ -105,6 +126,18 @@ class Room {
     });
     // add to list of participants.
     this.participants.set(participantId, participant);
+  }
+
+  async removeParticipant(participantId) {
+    const participant = this.participants.get(participantId);
+    if (participant) {
+      participant.cleanupResources();
+      this.participants.delete(participantId);
+    }
+  }
+
+  async cleanupResources() {
+    this.router.close();
   }
 }
 
@@ -116,6 +149,16 @@ class Participant {
     this.audioProducer;
     this.videoProducer;
     this.consumers = [];
+  }
+
+  cleanupResources() {
+    this.sendTransport.close();
+    this.recvTransport.close();
+
+    if (this.audioProducer) this.audioProducer.close();
+    if (this.videoProducer) this.audioProducer.close();
+
+    //TODO handle cleanup of consumers
   }
 }
 
