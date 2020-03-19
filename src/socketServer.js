@@ -27,13 +27,48 @@ function handleClientConnect(socket) {
       callback({ success: false, error: e.message });
     }
   });
+
+  socket.on('getRouterRtpCapabilites', (roomId, callback) => {
+    const room = _rooms.get(roomId);
+    if (!room) {
+      callback({ error: 'no room with that Id was found' });
+      return;
+    } else {
+      callback(room.router.rtpCapabilities);
+    }
+  });
+
+  socket.on('getTransports', (roomId, callback) => {
+    const room = _rooms.get(roomId);
+    const participant = room.participants.get(socket.id);
+    const { sendTransport, recvTransport } = participant;
+
+    callback({
+      sendTransport: {
+        id: sendTransport.id,
+        iceParameters: sendTransport.iceParameters,
+        iceCandidates: sendTransport.iceCandidates,
+        dtlsParameters: sendTransport.dtlsParameters,
+        sctpParamters: sendTransport.sctpParamters,
+      },
+      recvTransport: {
+        id: recvTransport.id,
+        iceParameters: recvTransport.iceParameters,
+        iceCandidates: recvTransport.iceCandidates,
+        dtlsParameters: recvTransport.dtlsParameters,
+        sctpParamters: recvTransport.sctpParamters,
+      },
+    });
+  });
+
+  //other listeners
 }
 
 async function createOrJoinRoom(roomId, participantId) {
   if (_rooms.has(roomId)) {
     // room already exists, add participant to the room
     const room = _rooms.get(roomId);
-    room.participants.push(new Participant({ participantId }));
+    await room.addNewParticipant(participantId);
     return room;
   } else {
     // room doesnt exist. create a new room, with a new participant in it.
@@ -41,8 +76,9 @@ async function createOrJoinRoom(roomId, participantId) {
     const room = new Room({
       router,
       roomId,
-      initialParticipantId: participantId,
     });
+
+    await room.addNewParticipant(participantId);
     // save the room for later reference
     _rooms.set(roomId, room);
     return room;
@@ -50,20 +86,17 @@ async function createOrJoinRoom(roomId, participantId) {
 }
 
 class Room {
-  constructor({ router, roomId, initialParticipantId }) {
+  constructor({ router, roomId }) {
     this.id = roomId;
     this.router = router;
-    this.participants = [];
-
-    // if optional initial participant is specified then add them to the room.
-    if (initialParticipantId) {
-      this.addNewParticipant(initialParticipantId);
-    }
+    this.participants = new Map();
   }
 
-  addNewParticipant(participantId) {
+  async addNewParticipant(participantId) {
     // create the transports that the participant will need
-    const { sendTransport, recvTransport } = createNewTransports();
+    const [sendTransport, recvTransport] = await createNewTransports(
+      this.router,
+    );
     // create participant object
     const participant = new Participant({
       participantId,
@@ -71,7 +104,7 @@ class Room {
       recvTransport,
     });
     // add to list of participants.
-    this.participants.push(participant);
+    this.participants.set(participantId, participant);
   }
 }
 
