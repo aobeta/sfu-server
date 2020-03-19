@@ -3,13 +3,8 @@ const config = require('../config');
 
 let _worker;
 let _routers = new Map();
-let _mediaCodecs = mediasoup.getSupportedRtpCapabilities().codecs.filter(
-  // have to filter out codecs the other two 'audio/CN' codecs to avoid duplicate prefferredPayloadTypes error
-  codec =>
-    codec.mimeType === 'audio/CN' &&
-    codec.clockRate !== 16000 &&
-    codec.clockRate !== 8000,
-);
+
+let _mediaCodecs = config.router.mediaCodecs;
 
 async function createWorker() {
   _worker = await mediasoup.createWorker({
@@ -22,19 +17,19 @@ async function createNewRouter() {
   // create worker if it hasnt been created already.
   if (!_worker) await createWorker();
 
-  const router = await _worker.createRouter({ _mediaCodecs });
+  const router = await _worker.createRouter({ mediaCodecs: _mediaCodecs });
   _routers.set(router.id, router);
   return router;
 }
 
 async function createNewTransport(router) {
-  return router.createWebRtcTransport({ ...config.webRtcTransport });
+  return await router.createWebRtcTransport({ ...config.webRtcTransport });
 }
 
 async function createNewTransports(router) {
   return [
-    router.createWebRtcTransport({ ...config.webRtcTransport }),
-    router.createWebRtcTransport({ ...config.webRtcTransport }),
+    await router.createWebRtcTransport({ ...config.webRtcTransport }),
+    await router.createWebRtcTransport({ ...config.webRtcTransport }),
   ];
 }
 
