@@ -15,13 +15,13 @@ function startSocketServer(webServer) {
 
 function handleClientConnect(socket) {
   console.log('new client connected: ', socket.id);
-
+  const participantId = socket.id;
   socket.on('joinRoom', async (roomId, callback) => {
     console.log('user wants to connect with specific room --> ', roomId, _rooms.size);
     // join room so that we can communicate with other people in the room.
     try {
       await new Promise(r => socket.join(roomId, r));
-      await createOrJoinRoom(roomId, socket.id);
+      await createOrJoinRoom(roomId, participantId);
       callback({ success: true });
     } catch (e) {
       callback({
@@ -45,7 +45,7 @@ function handleClientConnect(socket) {
 
   socket.on('getTransports', (roomId, callback) => {
     const room = _rooms.get(roomId);
-    const participant = room.participants.get(socket.id);
+    const participant = room.participants.get(participantId);
     const { sendTransport, recvTransport } = participant;
 
     callback({
@@ -67,11 +67,11 @@ function handleClientConnect(socket) {
   });
 
   socket.on('disconnect', reason => {
-    console.info(`client with id ${socket.id} has disconnected. reason: ${reason}`);
-    const room = Array.from(_rooms.values()).find(room => room.participants.has(socket.id));
+    console.info(`client with id ${participantId} has disconnected. reason: ${reason}`);
+    const room = Array.from(_rooms.values()).find(room => room.participants.has(participantId));
     if (room) {
       // first cleanup the participant
-      const participant = room.participants.get(socket.id);
+      const participant = room.participants.get(participantId);
       participant.cleanupResources();
       room.participants.delete(participant.id);
 
@@ -82,7 +82,45 @@ function handleClientConnect(socket) {
         console.info('rooms left :: ', _rooms.size);
       }
     } else {
-      console.error(`no room was found for participant with Id: ${socket.id}`);
+      console.error(`no room was found for participant with Id: ${participantId}`);
+    }
+  });
+
+  // for now only returns count of participants. may return an array of participants in the future.
+  socket.on('getRoomParticipants', (roomId, callback) => {
+    const room = _rooms.get(roomId);
+    callback(room.participants.size);
+  });
+
+  socket.on('send-transport-connect', async (roomId, dtlsParameters, callback) => {
+    const room = _rooms.get(roomId);
+    const participant = room.participants.get(participantId);
+
+    try {
+      await participant.sendTransport.connect({ dtlsParameters });
+      callback({ success: true });
+    } catch (e) {
+      callback({ success: false, error: e.message });
+    }
+  });
+
+  socket.on('send-transport-produce', async (roomId, parameters, callback) => {
+    const room = _rooms.get(roomId);
+    const participant = room.participants.get(participantId);
+    console.log('parameters: ', parameters);
+    try {
+      if (parameters.kind == 'video') {
+        participant.videoProducer = await participant.sendTransport.produce(parameters);
+        callback({ id: participant.videoProducer.id });
+      } else {
+        participant.audioProducer = await participant.sendTransport.produce(parameters);
+        callback({ id: participant.audioProducer.id });
+      }
+    } catch (e) {
+      console.error(
+        `Error in socket event "send-transport-produce" roomId: ${roomId},  participant: ${participantId}, error:  ${e.stack}`,
+      );
+      callback({ error: e.message });
     }
   });
 }

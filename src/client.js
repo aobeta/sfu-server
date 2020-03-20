@@ -1,12 +1,6 @@
 // npm packages
 const socket = require('socket.io-client');
-const {
-  types,
-  version,
-  detectDevice,
-  Device,
-  parseScalabilityMode,
-} = require('mediasoup-client');
+const { types, version, detectDevice, Device, parseScalabilityMode } = require('mediasoup-client');
 
 // private home-made libs
 const $ = require('../lib/element');
@@ -24,6 +18,11 @@ let _localPeer = {
   recvTransport: null,
   audioProducer: null,
   videoProducer: null,
+  connectTransport: null,
+  tracks: {
+    audio: null,
+    video: null,
+  },
 };
 
 _connectBtn.addEventListener('click', connect);
@@ -36,9 +35,8 @@ async function init() {
       audio: true,
       video: true,
     });
-    let audioTrack = stream.getAudioTracks()[0];
-    let videoTrack = stream.getVideoTracks()[0];
-
+    _localPeer.tracks.audio = stream.getAudioTracks()[0];
+    _localPeer.tracks.video = stream.getVideoTracks()[0];
     await connect();
 
     // request rtp capabilities from server.
@@ -50,10 +48,7 @@ async function init() {
     // load mediasoup device
     await _device.load({ routerRtpCapabilities });
 
-    console.info(
-      'device successfully set up with server side router',
-      routerRtpCapabilities,
-    );
+    console.info('device successfully set up with server side router', routerRtpCapabilities);
 
     console.info('device can produce video?', _device.canProduce('video'));
     console.info('device can produce audio?', _device.canProduce('audio'));
@@ -68,40 +63,43 @@ async function init() {
     _localPeer.sendTransport = _device.createSendTransport(sendTransport);
     _localPeer.recvTransport = _device.createRecvTransport(recvTransport);
 
-    _localPeer.sendTransport.on(
-      'connect',
-      async ({ dtlsParameters }, callback, errback) => {
-        console.info(
-          '[Transport] transport connect event emmitted :: ',
+    _localPeer.sendTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
+      console.info('[Transport] transport connect event emmitted :: ', dtlsParameters);
+
+      _localPeer.connectTransport = async function() {
+        const { success } = await _socket.request(
+          'send-transport-connect',
+          window.__RoomId__,
           dtlsParameters,
         );
-      },
-    );
+        console.log('successfully able to connect send transport? :', success);
+        if (success) {
+          callback();
+        } else {
+          errback();
+        }
+      };
 
-    _localPeer.sendTransport.on(
-      'produce',
-      async (parameters, callback, errback) => {
-        console.info(
-          '[Transport] transport produce event emmitted :: ',
-          parameters,
-        );
-      },
-    );
+      await startTransportIfNecessary();
+    });
 
-    _localPeer.videoProducer = await _localPeer.sendTransport.produce({
-      track: videoTrack,
-      //   encodings: [
-      //     { maxBitrate: 100000 },
-      //     { maxBitrate: 300000 },
-      //     { maxBitrate: 900000 },
-      //   ],
-      //   codecOptions: {
-      //     videoGoogleStartBitrate: 1000,
-      //   },
+    _localPeer.sendTransport.on('produce', async (parameters, callback, errback) => {
+      console.info('[Transport] transport produce event emmitted :: ', parameters);
+      let { id, error } = await _socket.request(
+        'send-transport-produce',
+        window.__RoomId__,
+        parameters,
+      );
+
+      if (error) {
+        errback(error);
+      } else {
+        callback({ id });
+      }
     });
 
     _localPeer.audioProducer = await _localPeer.sendTransport.produce({
-      track: audioTrack,
+      track: _localPeer.tracks.video,
       //   encodings: [
       //     { maxBitrate: 100000 },
       //     { maxBitrate: 300000 },
@@ -111,8 +109,32 @@ async function init() {
       //     videoGoogleStartBitrate: 1000,
       //   },
     });
+    console.log('created audio producer');
+
+    _localPeer.videoProducer = await _localPeer.sendTransport.produce({
+      track: _localPeer.tracks.audio,
+      //   encodings: [
+      //     { maxBitrate: 100000 },
+      //     { maxBitrate: 300000 },
+      //     { maxBitrate: 900000 },
+      //   ],
+      //   codecOptions: {
+      //     videoGoogleStartBitrate: 1000,
+      //   },
+    });
+    console.log('created videoProducer');
   } catch (e) {
     console.log('getUsermedia error: ', e);
+  }
+}
+
+async function startTransportIfNecessary() {
+  const count = await _socket.request('getRoomParticipants', window.__RoomId__);
+  console.log('[PARTICIPANT COUNT] : ', count);
+  if (count > 1) {
+    // then connect the transport and start producing.
+    console.info('enough participants in the room.. connecting transport');
+    await _localPeer.connectTransport();
   }
 }
 
