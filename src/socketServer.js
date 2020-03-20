@@ -16,16 +16,28 @@ function startSocketServer(webServer) {
 function handleClientConnect(socket) {
   console.log('new client connected: ', socket.id);
   const participantId = socket.id;
+
   socket.on('joinRoom', async (roomId, callback) => {
     console.log('user wants to connect with specific room --> ', roomId, _rooms.size);
     // join room so that we can communicate with other people in the room.
     try {
-      await new Promise(r => socket.join(roomId, r));
-      await createOrJoinRoom(roomId, participantId);
-      callback({ success: true });
+      await new Promise((r, rj) =>
+        socket.join(roomId, err => {
+          if (err) rj(err);
+          else r();
+        })
+      );
+      console.log('socket rooms joined after join() :', socket.rooms);
+      const [room, participant] = await createOrJoinRoom(roomId, participantId);
+      const participants = Array.from(room.participants.values())
+        .filter(p => p.id !== participantId) // only send all participants in the room except for you.
+        .map(participant => participant.serialize());
+
+      callback({ participants });
+      // notify everyone else in the room that there is a new participant.
+      socket.to(roomId).emit('newParticipant', participant.serialize());
     } catch (e) {
       callback({
-        success: false,
         error: e.message,
       });
     }
@@ -107,7 +119,6 @@ function handleClientConnect(socket) {
   socket.on('send-transport-produce', async (roomId, parameters, callback) => {
     const room = _rooms.get(roomId);
     const participant = room.participants.get(participantId);
-    console.log('parameters: ', parameters);
     try {
       if (parameters.kind == 'video') {
         participant.videoProducer = await participant.sendTransport.produce(parameters);
@@ -118,10 +129,23 @@ function handleClientConnect(socket) {
       }
     } catch (e) {
       console.error(
-        `Error in socket event "send-transport-produce" roomId: ${roomId},  participant: ${participantId}, error:  ${e.stack}`,
+        `Error in socket event "send-transport-produce" roomId: ${roomId},  participant: ${participantId}, error:  ${e.stack}`
       );
       callback({ error: e.message });
     }
+  });
+
+  socket.on('participant-ready', (roomId, callback) => {
+    const participant = getParticipant(roomId, participantId);
+    if (!participant) {
+      console.error(`socket:${participantId}::event[participant-ready] : no participant found`);
+      return;
+    }
+
+    participant.ready = true;
+    console.log('client ready emmitted by :: ', participantId);
+    socket.to(roomId).emit('participant-ready', participant.serialize());
+    callback();
   });
 }
 
@@ -129,8 +153,8 @@ async function createOrJoinRoom(roomId, participantId) {
   if (_rooms.has(roomId)) {
     // room already exists, add participant to the room
     const room = _rooms.get(roomId);
-    await room.addNewParticipant(participantId);
-    return room;
+    const participant = await room.addNewParticipant(participantId);
+    return [room, participant];
   } else {
     // room doesnt exist. create a new room, with a new participant in it.
     const router = await createNewRouter();
@@ -139,11 +163,21 @@ async function createOrJoinRoom(roomId, participantId) {
       roomId,
     });
 
-    await room.addNewParticipant(participantId);
+    const participant = await room.addNewParticipant(participantId);
     // save the room for later reference
     _rooms.set(roomId, room);
-    return room;
+    return [room, participant];
   }
+}
+
+function getParticipant(roomId, participantId) {
+  const room = _rooms.get(roomId);
+  if (room) {
+    const participant = room.participants.get(participantId);
+    return participant;
+  }
+
+  return null;
 }
 
 class Room {
@@ -164,6 +198,8 @@ class Room {
     });
     // add to list of participants.
     this.participants.set(participantId, participant);
+
+    return participant;
   }
 
   async removeParticipant(participantId) {
@@ -182,6 +218,8 @@ class Room {
 class Participant {
   constructor({ participantId, sendTransport, recvTransport }) {
     this.id = participantId;
+    this.timeJoined = new Date().getTime();
+    this.ready = false;
     this.sendTransport = sendTransport;
     this.recvTransport = recvTransport;
     this.audioProducer;
@@ -197,6 +235,18 @@ class Participant {
     if (this.videoProducer) this.audioProducer.close();
 
     //TODO handle cleanup of consumers
+  }
+
+  serialize() {
+    return {
+      id: this.id,
+      timeJoined: this.timeJoined,
+      isReady: this.ready,
+      producers: {
+        video: this.videoProducer ? this.videoProducer.id : null,
+        audio: this.audioProducer ? this.audioProducer.id : null,
+      },
+    };
   }
 }
 
