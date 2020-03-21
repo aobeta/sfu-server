@@ -27,7 +27,7 @@ function handleClientConnect(socket) {
           else r();
         })
       );
-      console.log('socket rooms joined after join() :', socket.rooms);
+
       const [room, participant] = await createOrJoinRoom(roomId, participantId);
       const participants = Array.from(room.participants.values())
         .filter(p => p.id !== participantId) // only send all participants in the room except for you.
@@ -116,6 +116,18 @@ function handleClientConnect(socket) {
     }
   });
 
+  socket.on('recv-transport-connect', async (roomId, dtlsParameters, callback) => {
+    const room = _rooms.get(roomId);
+    const participant = room.participants.get(participantId);
+
+    try {
+      await participant.recvTransport.connect({ dtlsParameters });
+      callback({ success: true });
+    } catch (e) {
+      callback({ success: false, error: e.message });
+    }
+  });
+
   socket.on('send-transport-produce', async (roomId, parameters, callback) => {
     const room = _rooms.get(roomId);
     const participant = room.participants.get(participantId);
@@ -135,8 +147,17 @@ function handleClientConnect(socket) {
     }
   });
 
-  socket.on('participant-ready', (roomId, callback) => {
-    const participant = getParticipant(roomId, participantId);
+  socket.on('informRtpCapabilites', (roomId, rtpCapabilities, callback) => {
+    const room = _rooms.get(roomId);
+    const participant = room.participants.get(participantId);
+    participant.rtpCapabilities = rtpCapabilities;
+
+    callback();
+  });
+
+  socket.on('participant-ready', async (roomId, callback) => {
+    const room = _rooms.get(roomId);
+    const participant = room.participants.get(participantId);
     if (!participant) {
       console.error(`socket:${participantId}::event[participant-ready] : no participant found`);
       return;
@@ -144,8 +165,140 @@ function handleClientConnect(socket) {
 
     participant.ready = true;
     console.log('client ready emmitted by :: ', participantId);
-    socket.to(roomId).emit('participant-ready', participant.serialize());
+    // socket.to(roomId).emit('participant-ready', participant.serialize());
+    const consumers = await createConsumersForParticipant(room, participant);
+    callback(
+      consumers.map(({ participantId, audioConsumer, videoConsumer }) => ({
+        participantId,
+        audioConsumer: {
+          id: audioConsumer.id,
+          kind: audioConsumer.kind,
+          producerId: audioConsumer.producerId,
+          rtpParameters: audioConsumer.rtpParameters,
+        },
+        videoConsumer: {
+          id: videoConsumer.id,
+          kind: videoConsumer.kind,
+          producerId: videoConsumer.producerId,
+          rtpParameters: videoConsumer.rtpParameters,
+        },
+      }))
+    );
+    createConsumersForOtherParticipants(room, participant, socket);
+  });
+
+  socket.on('audio-consumer-resume', async (roomId, otherParticipantId, callback) => {
+    const participant = getParticipant(roomId, participantId);
+    const { audioConsumer } = participant.consumers.get(otherParticipantId);
+    console.log('about to resume audio consumer: ', audioConsumer);
+
+    await audioConsumer.resume();
     callback();
+  });
+
+  socket.on('video-consumer-resume', async (roomId, otherParticipantId, callback) => {
+    const participant = getParticipant(roomId, participantId);
+    const { videoConsumer } = participant.consumers.get(otherParticipantId);
+    console.log('about to resume video consumer: ', videoConsumer);
+    await videoConsumer.resume();
+    callback();
+  });
+}
+
+async function createConsumersForParticipant(room, currentParticipant) {
+  const otherParticipants = Array.from(room.participants.values()).filter(
+    p => p.id !== currentParticipant.id
+  );
+  const consumers = [];
+  const paused = true;
+  const rtpCapabilities = currentParticipant.rtpCapabilities;
+
+  console.log('other participants :: ', otherParticipants);
+  for (let participant of otherParticipants) {
+    let audioConsumer;
+    let videoConsumer;
+    const audioProducer = participant.audioProducer;
+    const videoProducer = participant.videoProducer;
+
+    if (room.router.canConsume({ producerId: audioProducer.id, rtpCapabilities })) {
+      audioConsumer = await currentParticipant.recvTransport.consume({
+        producerId: audioProducer.id,
+        rtpCapabilities,
+        paused,
+      });
+    }
+
+    if (room.router.canConsume({ producerId: videoProducer.id, rtpCapabilities })) {
+      videoConsumer = await currentParticipant.recvTransport.consume({
+        producerId: videoProducer.id,
+        rtpCapabilities,
+        paused,
+      });
+    }
+
+    consumers.push({
+      participantId: participant.id,
+      audioConsumer,
+      videoConsumer,
+    });
+  }
+
+  currentParticipant.consumers = new Map(consumers.map(cons => [cons.participantId, cons]));
+  return consumers;
+}
+
+async function createConsumersForOtherParticipants(room, currentParticipant, participantSocket) {
+  const otherParticipants = Array.from(room.participants.values()).filter(
+    p => p.id !== currentParticipant.id
+  );
+  const paused = true;
+  const audioProducer = currentParticipant.audioProducer;
+  const videoProducer = currentParticipant.videoProducer;
+
+  otherParticipants.forEach(async participant => {
+    let audioConsumer;
+    let videoConsumer;
+    const rtpCapabilities = participant.rtpCapabilities;
+
+    if (room.router.canConsume({ producerId: audioProducer.id, rtpCapabilities })) {
+      audioConsumer = await participant.recvTransport.consume({
+        producerId: audioProducer.id,
+        rtpCapabilities,
+        paused,
+      });
+    }
+
+    if (room.router.canConsume({ producerId: videoProducer.id, rtpCapabilities })) {
+      videoConsumer = await participant.recvTransport.consume({
+        producerId: videoProducer.id,
+        rtpCapabilities,
+        paused,
+      });
+    }
+
+    const newConsumers = {
+      participantId: currentParticipant.id,
+      audioConsumer,
+      videoConsumer,
+    };
+
+    participant.consumers.set(currentParticipant.id, newConsumers);
+
+    participantSocket.to(participant.id).emit('new-participant-consumers', {
+      participantId: currentParticipant.id,
+      audioConsumer: {
+        id: audioConsumer.id,
+        kind: audioConsumer.kind,
+        producerId: audioConsumer.producerId,
+        rtpParameters: audioConsumer.rtpParameters,
+      },
+      videoConsumer: {
+        id: videoConsumer.id,
+        kind: videoConsumer.kind,
+        producerId: videoConsumer.producerId,
+        rtpParameters: videoConsumer.rtpParameters,
+      },
+    });
   });
 }
 
@@ -220,11 +373,12 @@ class Participant {
     this.id = participantId;
     this.timeJoined = new Date().getTime();
     this.ready = false;
+    this.rtpCapabilities = null;
     this.sendTransport = sendTransport;
     this.recvTransport = recvTransport;
     this.audioProducer;
     this.videoProducer;
-    this.consumers = [];
+    this.consumers = new Map();
   }
 
   cleanupResources() {

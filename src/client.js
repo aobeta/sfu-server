@@ -6,10 +6,6 @@ const { types, version, detectDevice, Device, parseScalabilityMode } = require('
 const $ = require('../lib/element');
 const socketRequest = require('../lib/socketRequest');
 
-// dom elements
-const _connectBtn = $('#btn_connect');
-const _connectMsg = $('#connection_status');
-
 // global variables
 let _socket;
 let _device = new Device({ handlerName: 'Chrome74' }); // TODO resolve handler depending on browser.
@@ -19,7 +15,7 @@ const _localPeer = {
   recvTransport: null,
   audioProducer: null,
   videoProducer: null,
-  connectTransport: null,
+  rtpCapabilities: null,
   tracks: {
     audio: null,
     video: null,
@@ -27,8 +23,6 @@ const _localPeer = {
 };
 
 let _remoteParticipants = new Map();
-
-_connectBtn.addEventListener('click', connect);
 
 document.addEventListener('DOMContentLoaded', init);
 
@@ -67,10 +61,19 @@ function connect() {
         _remoteParticipants = new Map(
           participants.map(participant => [participant.id, participant])
         );
+
+        participants.forEach(participant => {
+          setUpNewParticipantVideoContainers(participant.id);
+        });
         resolve();
       }
     });
   });
+}
+
+function setUpLocalVideo(track) {
+  const stream = new MediaStream([track]);
+  $('#local_video').srcObject = stream;
 }
 
 async function initializeDevice() {
@@ -82,11 +85,15 @@ async function initializeDevice() {
   _localPeer.tracks.video = stream.getVideoTracks()[0];
   await connect();
 
+  setUpLocalVideo(_localPeer.tracks.video);
+
   // request rtp capabilities from server.
   const routerRtpCapabilities = await _socket.request('getRouterRtpCapabilites', window.__RoomId__);
 
   // load mediasoup device
   await _device.load({ routerRtpCapabilities });
+
+  await _socket.request('informRtpCapabilites', window.__RoomId__, _device.rtpCapabilities);
 
   console.info('device successfully set up with server side router', routerRtpCapabilities);
 
@@ -106,26 +113,36 @@ async function initializeTransports() {
   _localPeer.sendTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
     console.info('[Send-Transport] transport connect event emmitted :: ', dtlsParameters);
 
-    _localPeer.connectTransport = async function() {
-      const { success } = await _socket.request(
-        'send-transport-connect',
-        window.__RoomId__,
-        dtlsParameters
-      );
-      console.log('successfully able to connect send transport? :', success);
-      if (success) {
-        callback();
-      } else {
-        errback();
-      }
-    };
+    const { success } = await _socket.request(
+      'send-transport-connect',
+      window.__RoomId__,
+      dtlsParameters
+    );
+    if (success) {
+      callback();
+    } else {
+      errback();
+    }
 
     /** If we decide to connect transports only when other participants join, then we will uncomment
      *  this logic below.
      */
     // await startTransportIfNecessary();
+  });
 
-    await _localPeer.connectTransport();
+  _localPeer.recvTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
+    console.info('[Recv-Transport] transport connect event emmitted :: ', dtlsParameters);
+    const { success, error } = await _socket.request(
+      'recv-transport-connect',
+      window.__RoomId__,
+      dtlsParameters
+    );
+
+    if (success) {
+      callback();
+    } else {
+      errback();
+    }
   });
 
   _localPeer.sendTransport.on('produce', async (parameters, callback, errback) => {
@@ -141,15 +158,6 @@ async function initializeTransports() {
     } else {
       callback({ id });
     }
-  });
-
-  _localPeer.recvTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
-    console.info('[Recv-Transport] transport connect event emmitted :: ', dtlsParameters);
-    const { success } = await _socket.request(
-      'recv-transport-connect',
-      window.__RoomId__,
-      dtlsParameters
-    );
   });
 }
 
@@ -179,18 +187,65 @@ async function startProducing() {
     //   },
   });
   console.log('created videoProducer');
-  await _socket.request('participant-ready', window.__RoomId__);
+  let consumers = await _socket.request('participant-ready', window.__RoomId__);
+
+  for (let participantConsumers of consumers) {
+    const participant = _remoteParticipants.get(participantConsumers.participantId);
+    await setUpConsumers(participant, participantConsumers);
+  }
 }
 
 function setUpSocketListeners() {
   setUpSocketListener('newParticipant', participant => {
     _remoteParticipants.set(participant.id, participant);
+    setUpNewParticipantVideoContainers(participant.id);
   });
 
   setUpSocketListener('participant-ready', participant => {
     _remoteParticipants.set(participant.id, participant);
-    console.log('participants now :: ', _remoteParticipants);
   });
+
+  setUpSocketListener('new-participant-consumers', consumers => {
+    const participant = _remoteParticipants.get(consumers.participantId);
+    const { audioConsumer, videoConsumer } = consumers;
+
+    console.log('participant after setting up consumers ------> ', participant);
+
+    setUpConsumers(participant, consumers);
+  });
+}
+
+async function setUpConsumers(participant, { audioConsumer, videoConsumer, participantId }) {
+  const audio = await _localPeer.recvTransport.consume(audioConsumer);
+  const video = await _localPeer.recvTransport.consume(videoConsumer);
+  Object.assign(participant, { audioConsumer: audio, videoConsumer: video });
+
+  await _socket.request('audio-consumer-resume', window.__RoomId__, participantId);
+  audio.resume();
+  await _socket.request('video-consumer-resume', window.__RoomId__, participantId);
+  video.resume();
+  console.log('successfully resumed consumers. ready to get media stream tracks');
+  console.log('audio consumer track :: ', audio.track);
+  console.log('video consumer track :: ', video.track);
+
+  setUpRemoteVideo([audio.track, video.track], participantId);
+}
+
+function setUpRemoteVideo(tracks, participantId) {
+  const stream = new MediaStream(tracks);
+  $(`#${participantId}`).srcObject = stream;
+}
+
+function setUpNewParticipantVideoContainers(participantId) {
+  const remoteVideoContainer = $('#remoteVideoContainer');
+  const participantContainer = document.createElement('div');
+  participantContainer.innerHTML = `
+    <div>${participantId}</div>
+    <video id="${participantId}" controls autoplay playsinline></video>
+  `;
+
+  participantContainer.dataset.participant = participantId;
+  remoteVideoContainer.appendChild(participantContainer);
 }
 
 function setUpSocketListener(event, callback) {
