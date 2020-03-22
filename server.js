@@ -15,7 +15,7 @@ const { exec } = require('child_process');
     createWorker();
     console.log('opening browser...');
 
-    setTimeout(() => exec(`open ${serverPath}/`), 1500);
+    // setTimeout(() => exec(`open ${serverPath}/`), 1500);
   } catch (e) {
     console.log(e);
   }
