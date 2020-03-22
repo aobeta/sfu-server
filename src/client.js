@@ -8,7 +8,12 @@ const socketRequest = require('../lib/socketRequest');
 
 // global variables
 let _socket;
-let _device = new Device({ handlerName: 'Chrome74' }); // TODO resolve handler depending on browser.
+let _device;
+const handlerName = detectDevice();
+if (handlerName) {
+  _device = new Device({ handlerName: 'Chrome74' }); // TODO resolve handler depending on browser.
+} else {
+}
 
 const _localPeer = {
   sendTransport: null,
@@ -77,6 +82,11 @@ function setUpLocalVideo(track) {
 }
 
 async function initializeDevice() {
+  if (!_device) {
+    alert('Device is not supported');
+    throw new Error('Device is not supported');
+  }
+
   let stream = await navigator.mediaDevices.getUserMedia({
     audio: true,
     video: true,
