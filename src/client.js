@@ -243,12 +243,22 @@ async function setUpConsumers(participant, { audioConsumer, videoConsumer, parti
   console.log('audio consumer track :: ', audio.track);
   console.log('video consumer track :: ', video.track);
 
-  setUpRemoteVideo([audio.track, video.track], participantId);
+  setUpRemoteVideo({ audio: audio.track, video: video.track }, participantId);
 }
 
 function setUpRemoteVideo(tracks, participantId) {
-  const stream = new MediaStream(tracks);
+  const audioTrack = tracks.audio;
+  const videoTrack = tracks.video;
+
+  //set video
+  const stream = new MediaStream([videoTrack]);
   $(`#${participantId}`).srcObject = stream;
+
+  //set audio up.
+  const participantAudio = new Audio();
+  participantAudio.srcObject = new MediaStream([audioTrack]);
+  participantAudio.play();
+  $(`[data-participant="${participantId}"]`).appendChild(participantAudio);
 }
 
 function setUpNewParticipantVideoContainers(participantId) {
