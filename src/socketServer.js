@@ -29,6 +29,7 @@ function handleClientConnect(socket) {
       );
 
       const [room, participant] = await createOrJoinRoom(roomId, participantId);
+      console.log('current room size :: ', room.participants.size);
       const participants = Array.from(room.participants.values())
         .filter(p => p.id !== participantId) // only send all participants in the room except for you.
         .map(participant => participant.serialize());
