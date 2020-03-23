@@ -35,30 +35,33 @@
     body {
       font: 0.9rem arial, serif;
     }
-    table {
-      width: 100%;
-      max-width: 800px;
-    }
-    table td {
-      width: 33.33%;
-      vertical-align: top;
-    }
-    fieldset {
-      min-height: 100%;
-      border: 1px solid silver;
-      padding: 10px;
-    }
-    button {
-      padding: 5px;
-      margin: 5px;
-    }
-    span {
-      font-family: monospace;
-    }
 
     .videoContainers {
       display: flex;
       flex-direction: row;
+      flex-wrap: wrap;
+    }
+
+    .videoContainer {
+      width: 400px;
+      height: 300px;
+      border-radius: 8px;
+      margin-right: 20px;
+      margin-bottom: 20px;
+      position: relative;
+    }
+
+    .videoLabel {
+      position: absolute;
+      color: white;
+      top: 15px;
+      left: 15px;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      border-radius: inherit;
     }
   </style>
   <body>
@@ -75,11 +78,10 @@
       </tr>
     </table> -->
     <div class="videoContainers">
-      <div>
-        <div>Local</div>
-        <video id="local_video" controls autoplay playsinline></video>
+      <div class="videoContainer">
+        <div class="videoLabel">Local</div>
+        <video id="local_video" autoplay playsinline></video>
       </div>
-      <div id="remoteVideoContainer"></div>
     </div>
   </body>
   <script>

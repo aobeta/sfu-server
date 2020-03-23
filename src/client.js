@@ -206,16 +206,21 @@ async function startProducing() {
 }
 
 function setUpSocketListeners() {
-  setUpSocketListener('newParticipant', participant => {
+  onSocket('newParticipant', participant => {
     _remoteParticipants.set(participant.id, participant);
     setUpNewParticipantVideoContainers(participant.id);
   });
 
-  setUpSocketListener('participant-ready', participant => {
+  onSocket('participant-disconnect', participantId => {
+    const participantVideoContainer = $(`[data-participant="${participantId}"]`);
+    participantVideoContainer.remove();
+  });
+
+  onSocket('participant-ready', participant => {
     _remoteParticipants.set(participant.id, participant);
   });
 
-  setUpSocketListener('new-participant-consumers', consumers => {
+  onSocket('new-participant-consumers', consumers => {
     const participant = _remoteParticipants.get(consumers.participantId);
     const { audioConsumer, videoConsumer } = consumers;
 
@@ -247,18 +252,19 @@ function setUpRemoteVideo(tracks, participantId) {
 }
 
 function setUpNewParticipantVideoContainers(participantId) {
-  const remoteVideoContainer = $('#remoteVideoContainer');
+  const remoteVideoContainer = $('.videoContainers');
   const participantContainer = document.createElement('div');
   participantContainer.innerHTML = `
-    <div>${participantId}</div>
-    <video id="${participantId}" controls autoplay playsinline></video>
+    <div class="videoLabel">${participantId}</div>
+    <video id="${participantId}" autoplay playsinline></video>
   `;
 
   participantContainer.dataset.participant = participantId;
+  participantContainer.className = 'videoContainer';
   remoteVideoContainer.appendChild(participantContainer);
 }
 
-function setUpSocketListener(event, callback) {
+function onSocket(event, callback) {
   _socket.on(event, function() {
     let args = Array.from(arguments);
     const callbackfn = args[args.length - 1];

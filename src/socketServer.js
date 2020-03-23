@@ -79,19 +79,22 @@ function handleClientConnect(socket) {
   });
 
   socket.on('disconnect', reason => {
-    console.info(`client with id ${participantId} has disconnected. reason: ${reason}`);
+    console.info(
+      `----[ ]----- client with id ${participantId} has disconnected. reason: ${reason}`
+    );
     const room = Array.from(_rooms.values()).find(room => room.participants.has(participantId));
+    console.log('--> found room : ', room.id);
     if (room) {
       // first cleanup the participant
-      const participant = room.participants.get(participantId);
-      participant.cleanupResources();
-      room.participants.delete(participant.id);
+      room.removeParticipant(participantId);
+      socket.to(room.id).emit('participant-disconnect', participantId);
+
+      console.log('Number of participants in room ---> ', room.participants.size);
 
       // then cleanup the room if necessary.
       if (room.participants.size === 0) {
         room.cleanupResources();
         _rooms.delete(room.id);
-        console.info('rooms left :: ', _rooms.size);
       }
     } else {
       console.error(`no room was found for participant with Id: ${participantId}`);
@@ -190,7 +193,6 @@ function handleClientConnect(socket) {
   socket.on('audio-consumer-resume', async (roomId, otherParticipantId, callback) => {
     const participant = getParticipant(roomId, participantId);
     const { audioConsumer } = participant.consumers.get(otherParticipantId);
-    console.log('about to resume audio consumer: ', audioConsumer);
 
     await audioConsumer.resume();
     callback();
@@ -199,7 +201,7 @@ function handleClientConnect(socket) {
   socket.on('video-consumer-resume', async (roomId, otherParticipantId, callback) => {
     const participant = getParticipant(roomId, participantId);
     const { videoConsumer } = participant.consumers.get(otherParticipantId);
-    console.log('about to resume video consumer: ', videoConsumer);
+
     await videoConsumer.resume();
     callback();
   });
@@ -213,7 +215,6 @@ async function createConsumersForParticipant(room, currentParticipant) {
   const paused = true;
   const rtpCapabilities = currentParticipant.rtpCapabilities;
 
-  console.log('other participants :: ', otherParticipants);
   for (let participant of otherParticipants) {
     let audioConsumer;
     let videoConsumer;
@@ -359,8 +360,22 @@ class Room {
     const participant = this.participants.get(participantId);
     if (participant) {
       participant.cleanupResources();
+      this.cleanUpParticipantConsumers(participant);
       this.participants.delete(participantId);
     }
+  }
+
+  /**
+   * cleans up all the consumers for this participant, that other participants have created
+   * @param {*} participant participant for whose consumers we will be closing in other participants.
+   */
+  cleanUpParticipantConsumers(participant) {
+    const otherParticipants = Array.from(this.participants.values()).filter(
+      p => p.id !== participant.id
+    );
+    otherParticipants.forEach(otherParticipant =>
+      otherParticipant.cleanUpParticipantConsumers(participant.id)
+    );
   }
 
   async cleanupResources() {
@@ -388,7 +403,21 @@ class Participant {
     if (this.audioProducer) this.audioProducer.close();
     if (this.videoProducer) this.audioProducer.close();
 
-    //TODO handle cleanup of consumers
+    const participantIds = Array.from(this.consumers.keys());
+    for (let participantId of participantIds) {
+      this.cleanUpParticipantConsumers(participantId);
+    }
+  }
+
+  cleanUpParticipantConsumers(participantId) {
+    const participantConsumers = this.consumers.get(participantId);
+    if (participantConsumers) {
+      const { audioConsumer, videoConsumer, participantId } = participantConsumers;
+      if (videoConsumer) videoConsumer.close();
+      if (audioConsumer) audioConsumer.close();
+
+      this.consumers.delete(participantId);
+    }
   }
 
   serialize() {
