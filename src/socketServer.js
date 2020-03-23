@@ -221,7 +221,8 @@ async function createConsumersForParticipant(room, currentParticipant) {
     let videoConsumer;
     const audioProducer = participant.audioProducer;
     const videoProducer = participant.videoProducer;
-
+    console.log('participant has audioProducer!! ', audioProducer);
+    console.log('participant has videoProducer!! ', videoProducer);
     if (room.router.canConsume({ producerId: audioProducer.id, rtpCapabilities })) {
       audioConsumer = await currentParticipant.recvTransport.consume({
         producerId: audioProducer.id,
