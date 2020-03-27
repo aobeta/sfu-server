@@ -1,4 +1,3 @@
-const mediasoup = require('mediasoup');
 const path = require('path');
 const config = require('./config');
 
