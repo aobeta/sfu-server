@@ -4,6 +4,7 @@
   "useSsl": true,
   "listenIp": "localhost",
   "listenPort": "8888",
+  "openBrowserOnStart": "false",
   "webRtcTransport": {
     "listenIps": [
       {
