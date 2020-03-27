@@ -1,5 +1,6 @@
 const mediasoup = require('mediasoup');
 const path = require('path');
+const config = require('./config');
 
 const { startWebServer } = require('./src/webserver');
 const { startExpressApp } = require('./src/express');
@@ -15,7 +16,7 @@ const { exec } = require('child_process');
     createWorker();
     console.log('opening browser...');
 
-    // setTimeout(() => exec(`open ${serverPath}/`), 1500);
+    if (config.openBrowserOnStart) setTimeout(() => exec(`open ${serverPath}/`), 1500);
   } catch (e) {
     console.log(e);
   }
