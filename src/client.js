@@ -251,6 +251,7 @@ function setUpRemoteVideo(tracks, participantId) {
   const videoTrack = tracks.video;
 
   //set video
+  console.log('checking for participant container.....', document.getElementById(participantId));
   const stream = new MediaStream([videoTrack]);
   $(`#${participantId}`).srcObject = stream;
 
@@ -272,6 +273,7 @@ function setUpNewParticipantVideoContainers(participantId) {
   participantContainer.dataset.participant = participantId;
   participantContainer.className = 'videoContainer';
   remoteVideoContainer.appendChild(participantContainer);
+  console.info(`set up container for ${participantId}`);
 }
 
 function onSocket(event, callback) {
